@@ -19,9 +19,9 @@ def colors(colortext, *pargs, **kw):
 	accidental color codes in text is not parsed.
 	"""
 	doescape = True
-	if 'noescape' in kw and kw['noescape']
+	if 'noescape' in kw and kw['noescape']:
 		doescape = False
-	is isinstance(colortext, int):
+	if isinstance(colortext, int):
 		# Flattened arguments, unflatten
 		temp = (colortext,) + pargs
 		if len(pargs) % 2 != 0:
@@ -43,6 +43,13 @@ def color_escape(text):
 	"""
 	return text.replace('^', '^^')
 
+_STRIPCOLORS_PATTERN = re.compile(r'\^[0-9^]')
+def stripcolors(text):
+	"""stripcolors(string) -> string
+	Removes color codes from 
+	"""
+	return _STRIPCOLORS_PATTERN.sub((lambda m: '^' if m.group() == '^^' else ''), text)
+
 class Quoted(object):
 	"""
 	Flags a piece of text as pre-quoted.
@@ -51,7 +58,7 @@ class Quoted(object):
 	def __init__(self, text, quoted=False):
 		"""Quoted(string, [bool])
 		Text is the text to flag. Quoted is a flag indicating if it should be 
-		escaped and quoted. If False, the text passed to quote().
+		escaped and quoted. If False (the default), the text passed to quote().
 		"""
 		if not quoted:
 			self._text = quote(text)
@@ -74,6 +81,12 @@ def quote(text):
 	# \" causes the string to not end, but may or may not be substituted 
 	# correctly.
 	# \\ is similar, does the right structural thing but may not be parsed
+	
+	text = text.replace('$', '$$') # Escape vars
+	if ' ' in text:
+		# Don't quote unless we have to
+		text = '"'+text.replace('\\', '\\\\').replace('"', '\\"')+'"'
+	return text
 
 """
 Parsing commands (from darkplaces/cmd.c:302)
