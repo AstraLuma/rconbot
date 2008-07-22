@@ -71,21 +71,25 @@ class Quoted(object):
 	def __repr__(self):
 		return "<%s text=%r>" % (type(self).__name__, self._text)
 
-def quote(text):
-	"""quote(string) -> string
+def quote(text, say=False):
+	"""quote(string, [bool]) -> string
 	Performs escaping so that text is parsed as a single argument with no 
 	variable substitution.
+	
+	If say is True, use say/echo/tell escaping rules.
 	"""
 	# Quote $ as $$
 	# "" does token grouping (several words as one argument)
-	# \" causes the string to not end, but may or may not be substituted 
-	# correctly.
-	# \\ is similar, does the right structural thing but may not be parsed
+	# \" causes the string to not end
+	# \\ is similar to \"
+	# Commands which use Cmd_Args() instead of Cmd_Argv() do not follow 
+	# standard parsing rules.
 	
 	text = text.replace('$', '$$') # Escape vars
-	if ' ' in text:
-		# Don't quote unless we have to
-		text = '"'+text.replace('\\', '\\\\').replace('"', '\\"')+'"'
+	if not say:
+		if ' ' in text:
+			# Don't quote unless we have to
+			text = '"'+text.replace('\\', '\\\\').replace('"', '\\"')+'"'
 	return text
 
 """
