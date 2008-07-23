@@ -5,7 +5,8 @@
 Utilities, dealing mostly with strings.
 """
 from __future__ import division, absolute_import, with_statement
-__all__ = '',
+import re
+#__all__ = 'colors', 'BLACK', RED, GREEN, YELLOW, BLUE, CYAN, MAGENTA, WHITE, GREY_TRANS, GREY_SOLID
 
 BLACK, RED, GREEN, YELLOW, BLUE, CYAN, MAGENTA, WHITE, GREY_TRANS, GREY_SOLID =\
 	range(10)

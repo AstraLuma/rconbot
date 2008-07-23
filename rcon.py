@@ -6,20 +6,48 @@ This handles the raw communication with the Nexuiz server.
 """
 from __future__ import division, absolute_import, with_statement
 from twisted.internet.protocol import DatagramProtocol
-import sys
-from .utils import quote
-__all__ = 'Rcon',
+from twisted.internet import defer
+from Queue import Queue, Empty
+import sys, re
+from rconbot.utils import quote
+__all__ = 'Rcon', 'CommandRefused', 'VariableException', 'NoValue', 'WrongVariable'
 
 SEND_FORMAT = '\xFF\xFF\xFF\xFF%s\0'
 RECV_PREFIX = '\xFF\xFF\xFF\xFFn'
 
+class CommandRefused(Exception):
+	"""
+	Command was refused by server; ie the port is closed and no one is listening.
+	"""
+
+class VariableException(Exception):
+	"""
+	There was a problem getting or setting a variable
+	"""
+
+class NoValue(Exception):
+	"""
+	The server returned something, but it wasn't parsable as a value.
+	"""
+
+class WrongVariable(Exception):
+	"""
+	The server returned a value, but it was for the wrong variable.
+	"""
+
 class Rcon(DatagramProtocol):
 	__password = None
 	_host = _port = None
+	_deferreds = None
+	_streaming = False
 	def __init__(self, host, port, password):
 		self._host = host
 		self._port = port or 26000
 		self.__password = password
+		self._deferreds = Queue(-1)
+	
+	def __del__(self):
+		self.stop_streaming()
 	
 	def startProtocol(self):
 		self.transport.connect(self._host, self._port)
@@ -30,20 +58,35 @@ class Rcon(DatagramProtocol):
 	# address to which we are sending.
 	def connectionRefused(self):
 		print >> sys.stderr, "No one listening"
+		try:
+			d = self._deferreds.get_nowait() # If there isn't an item, skip it
+		except Empty:
+			return
+		else:
+			# Should we do something like store an exception with the deferred?
+			d.errback(fail=CommandRefused())
 	
+	RCON_IGNORABLE = re.compile('^server received rcon command from ')
 	def datagramReceived(self, data, (host, port)):
-		print 'recv: %r' % data
+		#print 'recv: %r' % data
 		if data.startswith(RECV_PREFIX):
 			data = data[len(RECV_PREFIX):]
 		else:
 			return
 		if len(data) and data[-1] == '\0':
 			data = data[:-1]
-		print >> sys.stderr, "received %r from %s:%d" % (data, host, port)
+		print >> sys.stderr, "received %r... from %s:%d" % (data[:64], host, port)
 		if len(data) and data[0] == '\x01':
 			self.chatReceived(data[1:])
 		else:
-			self.textReceived(data)
+			if self.RCON_IGNORABLE.search(data) is not None:
+				return # Ignore it
+			try:
+				d = self._deferreds.get_nowait() # If there isn't an item, skip it
+			except Empty:
+				self.textReceived(data)
+			else:
+				d.callback(data)
 	
 	def send_raw(self, text):
 		print >> sys.stderr, "Sending %r" % text
@@ -56,46 +99,97 @@ class Rcon(DatagramProtocol):
 		return "rcon %s %s" % (self.__password, cmd)
 	
 	def _send(self, cmd):
-		"""r._send(str) -> None
+		"""r._send(str) -> Deferred
 		Wraps a command in rcon to be sent.
 		"""
-		return self.send_raw("rcon %s %s" % (self.__password, cmd))
+		d = defer.Deferred()
+		self._deferreds.put(d)
+		self.send_raw(self.format_rcon(cmd))
+		return d
 	
 	def _sends(self, cmds):
-		return self.send_raw('\0'.join("rcon %s %s" % (self.__password, cmd) for cmd in cmds))
+		d = defer.Deferred()
+		self._deferreds.put(d)
+		self.send_raw(self.format_rcon('\0'.join(cmds)))
+		return d
 	
 	def format_cmd(self, cmd, *pargs):
 		return cmd+' '+' '.join(quote(a) for a in pargs)
 	
 	def cmd(self, cmd, *pargs):
-		"""r.cmd(str, ...) -> None
+		"""r.cmd(str, ...) -> Deferred
 		Sends the command cmd with the arguments pargs.
 		"""
 		return self._send(self.format_cmd(cmd, *pargs))
 	
 	def cmds(self, *cmds):
-		"""r.cmds((str, ...), ...) -> None
+		"""r.cmds((str, ...), ...) -> Deferred, ...
 		Sends a single packet with all the commands.
 		"""
 		return self._sends((self.format_cmd(*cmd) for cmd in cmds))
 	
-	def getvar(self, var, value):
-		# FIXME: Handle RCON returns
-		rv = self.cmd(var)
-		return ''
+	VARVAL = re.compile(r'^"(?P<name>.*)" is "(?P<value>.*)" \["(?P<default>.*)"\]\n?$')
+	def getvar(self, var):
+		"""r.getvar(string) -> Deferred
+		Gets the current and default value of a variable.
+		"""
+		vd = defer.Deferred()
+		def parseval(text):
+			m = self.VARVAL.search(text)
+			if m is None:
+				vd.errback(NoValue(repr(text)))
+				return text
+			name, value, default = m.group('name', 'value', 'default')
+			if name != var:
+				vd.errback(WrongVariable(repr(text)))
+				return text
+			vd.callback((value, default))
+			return text
+		cd = self.cmd(var)
+		cd.addCallback(parseval)
+		return vd
 	
 	def setvar(self, var, value):
-		self.cmd(var, str(value))
+		"""r.setvar(string, string) -> Deferred
+		Sets a variable.
+		"""
+		return self.cmd(var, str(value))
 	
 	def setvars(self, **kwargs):
-		self.cmds(*(map(str, kv) for kv in kwargs.iteritems))
+		"""r.setvars(name=value, ...) -> Deferred
+		Sets several variables.
+		"""
+		return self.cmds(*(map(str, kv) for kv in kwargs.iteritems()))
 	
 	def start_streaming(self):
 		"""
 		Sets up streaming console.
 		"""
 		host = self.transport.getHost()
-		self.setvars(log_dest_udp="%s:%i" % (host.host, host.port))
+		def set_ldu(values):
+			cur, defa = values
+			cur += " %s:%i" % (host.host, host.port)
+			self.setvars(log_dest_udp=cur)
+			self._streaming = True
+			return values
+		d = self.getvar('log_dest_udp')
+		d.addCallback(set_ldu)
+	
+	def stop_streaming(self):
+		"""
+		Tears down streaming console.
+		"""
+		if self._streaming:
+			host = self.transport.getHost()
+			hoststring = "%s:%i" % (host.host, host.port)
+			def set_ldu(values):
+				cur, defa = values
+				cur = cur.replace(hoststring, '')
+				self.setvars(log_dest_udp=cur)
+				self._streaming = False
+				return values
+			d = self.getvar('log_dest_udp')
+			d.addCallback(set_ldu)
 	
 	# Overloadables
 	def textReceived(self, data):
