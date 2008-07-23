@@ -5,35 +5,151 @@
 Extends rcon for some Nexuiz-specific functionality.
 
 That is, it's more helpful/automagical.
+
+Note: If you actually care about the results of commands, it is encouraged that 
+you send them one at a time. Commands with large output may cause strange 
+issues.
 """
 from __future__ import division, absolute_import, with_statement
 from .rcon import Rcon
-__all__ = 'Commands',
+from . import utils
+__all__ = 'Commands', 'NexRcon'
 
 class _Commands(object):
 	"""
 	Does all the handling of command aliases, so that one can chain together 
 	commands more easily.
 	
-	TODO: Add some callback-like things?
+	Each method represents an actual command.
 	"""
-	def getvar(self, name, value):
-		"""Commands.setvar(string) -> string
-		Gets a variable.
-		"""
+	# Because it would be rediculous to implement every command, we do some hackery
+	# When a NexRcon is init'd, it requests the current list of commands before 
+	# start_stream() is called. This allows it to fully parse the long list.
+	__commands = None
+	__cont = ''
+	def __init__(self):
+		self.__commands = {}
+		self.__cont = ''
 	
-	def setvar(self, name, value):
-		"""Commands.setvar(string, string) -> None
-		Sets a variable.
+	def _init_commands(self, text):
 		"""
+		Internal.
+		Used by NexRcon to fill in details about commands.
+		"""
+		lines = (self.__cont+text).split('\n')
+		for line in lines[:-1]:
+			name, doc = line.split(':')
+			name = name.strip()
+			doc = doc.strip()
+			self.__commands[name] = doc
+			meth = getattr(self, name) # Cause the method to be created
+		self.__cont = lines[-1]
+		if self.__cont == '':
+			return None
+		return text
 	
+	def _get_method(self, name):
+		"""
+		Internal.
+		Creates a method to parse a command.
+		"""
+		def generic_command(*pargs):
+			return (name,)+pargs
+		generic_command.__name__ = name
+		if name in self.__commands:
+			generic_command.__doc__ = self.__commands[doc]
+		return generic_command
+	
+	def __getattr__(self, name): 
+		"""Commands.__getattr__(n) <==> getattr(Commands, n)
+		
+		Returns methods for commands which haven't been created yet.
+		"""
+		# We depend on the behavior that if the method already exists, this isn't called
+		generic_command = self._get_method(name)
+		setattr(self, name, generic_command)
+		return generic_command
+	
+	# These commands require special handling to be Pythonic.
 	def say(self, text):
-		"""Commands.say(string) -> None
-		Causes the server to say something in chat.
-		"""
-		# NOTE: say has different escaping rules.
+		"send a chat message to everyone on the server"
+		return 'say '+utils.quote(text, say=True)
+	
+	def say_team(self, text):
+		"send a chat message to your team on the server"
+		return 'say_team '+utils.quote(text, say=True)
+	
+	def echo(self, text):
+		"print a message to the console (useful in scripts)"
+		return 'echo '+utils.quote(text, say=True)
+	
+	def tell(self, user, text):
+		"send a chat message to only one person on the server"
+		# Really, really weird
+		return 'tell '+utils.quote("#%i %s"% (user, text), say=True)
+	
+	# All other commands work right.
 
 Commands = _Commands()
+
+class NexRcon(Rcon):
+	"""
+	Like Rcon, with the addition of handling Commands.
+	"""
+	# Uses some internal methods of Rcon
+	_init = True
+	def __init__(self, *pargs):
+		"""
+		See Rcon.__init__()
+		"""
+		Rcon.__init__(self, *pargs)
+		self._init = True
+		# Catches multiple packets because of the command list's size
+		# Does some magical method swapping
+		self._backup_textReceived = self.textReceived
+		self.textReceived = self._textReceived
+		# Grab the list of commands
+		d = self.cmd('cmdlist')
+		d.addCallback(Commands._init_commands)
+		d.addCallback(self._finished_huh)
+		# TODO: Do we wait for _init to be cleared?
+	
+	def _finished_huh(self, text):
+		"""
+		Internal.
+		Does work dealing with wrapping up initialization.
+		"""
+		if text is None:
+			self._init = False
+			self._textReceived(None) # To clean up
+		return text
+	
+	def _textReceived(self, text):
+		"""
+		Internal.
+		Catches loose packets and wraps up init.
+		"""
+		if self._init:
+			self._finished_huh(Commands._init_commands(text))
+		if not self._init: # Make sure we swap methods back
+			self.textReceived = self._backup_textReceived
+	
+	def send(self, *cmds):
+		"""nr.send(cmd, ...) -> Deferred
+		Sends 1 or more commands.
+		
+		Example:
+		>>> NexRcon('127.0.0.1', 26000, 'spam&eggs').send(Commands.say("Hello!"))
+		"""
+		cmd_strings = []
+		for cmd in cmds:
+			if isinstance(cmd, basestring):
+				# Pre-quoted
+				cmd_strings.append(cmd)
+			else:
+				# Just a collection of arguments
+				cmd_strings.append(self.format_cmd(*cmd))
+		return self._sends(cmd_strings)
 
 """
 Core C Commands:

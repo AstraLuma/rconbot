@@ -3,10 +3,14 @@
 # vim:tabstop=4:noexpandtab:
 """
 This handles the raw communication with the Nexuiz server.
+
+Note: If you actually care about the results of commands, it is encouraged that 
+you send them one at a time. Commands with large output may cause strange 
+issues.
 """
 from __future__ import division, absolute_import, with_statement
 from twisted.internet.protocol import DatagramProtocol
-from twisted.internet import defer
+from twisted.internet import defer, inlineCallbacks, returnValue
 from Queue import Queue, Empty
 import sys, re
 from rconbot.utils import quote
@@ -36,20 +40,34 @@ class WrongVariable(Exception):
 	"""
 
 class Rcon(DatagramProtocol):
+	"""
+	Communicates with a DarkPlaces server using rcon.
+	"""
 	__password = None
 	_host = _port = None
 	_deferreds = None
 	_streaming = False
 	def __init__(self, host, port, password):
+		"""Rcon(string, int, string)
+		
+		Init's Rcon with the host, port, and rcon password needed.
+		"""
 		self._host = host
 		self._port = port or 26000
 		self.__password = password
 		self._deferreds = Queue(-1)
 	
 	def __del__(self):
+		"""
+		Cleans up streaming when the object is garbage collected, so the server 
+		isn't sending needless packets.
+		"""
 		self.stop_streaming()
 	
 	def startProtocol(self):
+		"""
+		Does some handling dealing with protocol setup.
+		"""
 		self.transport.connect(self._host, self._port)
 		print >> sys.stderr, "we can only send to %s now" % str((self._host, self._port))
 		#self.transport.write("hello") # no need for address
@@ -57,6 +75,9 @@ class Rcon(DatagramProtocol):
 	# Possibly invoked if there is no server listening on the
 	# address to which we are sending.
 	def connectionRefused(self):
+		"""
+		Invoked if the UDP packet is refused (nothing listening on that port)
+		"""
 		print >> sys.stderr, "No one listening"
 		try:
 			d = self._deferreds.get_nowait() # If there isn't an item, skip it
@@ -68,6 +89,9 @@ class Rcon(DatagramProtocol):
 	
 	RCON_IGNORABLE = re.compile('^server received rcon command from ')
 	def datagramReceived(self, data, (host, port)):
+		"""
+		Parses data from the server and dispatches it to the right place.
+		"""
 		#print 'recv: %r' % data
 		if data.startswith(RECV_PREFIX):
 			data = data[len(RECV_PREFIX):]
@@ -89,18 +113,23 @@ class Rcon(DatagramProtocol):
 				d.callback(data)
 	
 	def send_raw(self, text):
+		"""r.send_raw(string) -> int
+		Actually sends a command, wrapping it in a QW packet.
+		"""
 		print >> sys.stderr, "Sending %r" % text
 		return self.transport.write(SEND_FORMAT % text)
 	
 	def format_rcon(self, cmd):
 		"""r.format_rcon(str) -> str
+		Internal.
 		Turns the command into what should be passed to send_raw()
 		"""
 		return "rcon %s %s" % (self.__password, cmd)
 	
 	def _send(self, cmd):
 		"""r._send(str) -> Deferred
-		Wraps a command in rcon to be sent.
+		Wraps a command in rcon and sends it, creating and handling the 
+		Deferred.
 		"""
 		d = defer.Deferred()
 		self._deferreds.put(d)
@@ -108,12 +137,23 @@ class Rcon(DatagramProtocol):
 		return d
 	
 	def _sends(self, cmds):
+		"""r._sends([string, ...]) -> Deferred
+		Internal.
+		Wraps and sends a series of commands to the server, creating and 
+		handling the Deferred.
+		"""
+		# Used by NexRcon
 		d = defer.Deferred()
 		self._deferreds.put(d)
 		self.send_raw(self.format_rcon('\0'.join(cmds)))
 		return d
 	
 	def format_cmd(self, cmd, *pargs):
+		"""r.format_cmd(string, ...) -> string
+		Internal.
+		Formats a command to pass to _send()/_sends()
+		"""
+		# Used by NexRcon
 		return cmd+' '+' '.join(quote(a) for a in pargs)
 	
 	def cmd(self, cmd, *pargs):
@@ -128,80 +168,71 @@ class Rcon(DatagramProtocol):
 		"""
 		return self._sends((self.format_cmd(*cmd) for cmd in cmds))
 	
-	VARVAL = re.compile(r'^"(?P<name>.*)" is "(?P<value>.*)" \["(?P<default>.*)"\]\n?$')
-	def getvar(self, var):
-		"""r.getvar(string) -> Deferred
-		Gets the current and default value of a variable.
+	CVARVAL = re.compile(r'^"(?P<name>.*)" is "(?P<value>.*)" \["(?P<default>.*)"\]\n?$')
+	@inlineCallbacks
+	def getcvar(self, var):
+		"""r.getcvar(string) -> Deferred((string, string))
+		Gets the current and default value of a cvar.
 		"""
-		vd = defer.Deferred()
-		def parseval(text):
-			m = self.VARVAL.search(text)
-			if m is None:
-				vd.errback(NoValue(repr(text)))
-				return text
-			name, value, default = m.group('name', 'value', 'default')
-			if name != var:
-				vd.errback(WrongVariable(repr(text)))
-				return text
-			vd.callback((value, default))
-			return text
-		cd = self.cmd(var)
-		cd.addCallback(parseval)
-		return vd
+		text = yield self.cmd(var)
+		m = self.CVARVAL.search(text)
+		if m is None:
+			raise NoValue(repr(text))
+		name, value, default = m.group('name', 'value', 'default')
+		if name != var:
+			raise WrongVariable(repr(text))
+		returnValue((value, default))
 	
-	def setvar(self, var, value):
-		"""r.setvar(string, string) -> Deferred
-		Sets a variable.
+	def setcvar(self, var, value):
+		"""r.setcvar(string, string) -> Deferred
+		Sets a cvar.
 		"""
 		return self.cmd(var, str(value))
 	
-	def setvars(self, **kwargs):
-		"""r.setvars(name=value, ...) -> Deferred
-		Sets several variables.
+	def setcvars(self, **kwargs):
+		"""r.setcvars(name=value, ...) -> Deferred
+		Sets several cvars.
 		"""
 		return self.cmds(*(map(str, kv) for kv in kwargs.iteritems()))
 	
+	@inlineCallbacks
 	def start_streaming(self):
-		"""
+		"""r.start_streaming() -> Deferred
 		Sets up streaming console.
 		"""
 		host = self.transport.getHost()
-		def set_ldu(values):
-			cur, defa = values
-			cur += " %s:%i" % (host.host, host.port)
-			self.setvars(log_dest_udp=cur)
-			self._streaming = True
-			return values
-		d = self.getvar('log_dest_udp')
-		d.addCallback(set_ldu)
+		cur, _ = yield self.getcvar('log_dest_udp')
+		cur += " %s:%i" % (host.host, host.port)
+		self.setcvars(log_dest_udp=cur)
+		self._streaming = True
 	
+	@inlineCallbacks
 	def stop_streaming(self):
-		"""
+		"""r.stop_streaming() -> Deferred
 		Tears down streaming console.
 		"""
 		if self._streaming:
 			host = self.transport.getHost()
 			hoststring = "%s:%i" % (host.host, host.port)
-			def set_ldu(values):
-				cur, defa = values
-				cur = cur.replace(hoststring, '')
-				self.setvars(log_dest_udp=cur)
-				self._streaming = False
-				return values
-			d = self.getvar('log_dest_udp')
-			d.addCallback(set_ldu)
+			cur, _ = yield self.getcvar('log_dest_udp')
+			cur = cur.replace(hoststring, '')
+			self.setcvars(log_dest_udp=cur)
+			self._streaming = False
 	
-	# Overloadables
+	# Overridables
 	def textReceived(self, data):
-		"""
-		Any data the server sends to us (TODO: not responses to commands) is 
-		passed to this function.
+		"""r.textReceived(string) -> None
+		Any data the server sends to us is passed to this function.
+		
+		Meant to be overridden.
 		"""
 		sys.stdout.write(data)
 	
 	def chatReceived(self, data):
-		"""
+		"""r.chatReceived(string) -> None
 		Any chats the server receives (and is passed to us) goes here.
+		
+		Meant to be overridden.
 		"""
 		sys.stdout.write("Chat: "+data)
 
