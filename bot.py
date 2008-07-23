@@ -8,7 +8,7 @@ Allows you to easily write bots that react to events.
 """
 from __future__ import division, absolute_import, with_statement
 from .nexuiz import NexRcon, Commands
-from .utils import callbyline
+from .utils import callbyline, complexdecorator
 __all__ = 'Bot', 'command', 'recallback'
 
 class Bot(NexRcon):
@@ -52,6 +52,7 @@ def command(func):
 	#TODO: Implement
 	return func
 
+@complexdecorator
 def recallback(regex, **kwargs):
 	"""recallback(string, [**flags]) -> (callable) -> callable
 	Registers a method as a regular expression-trigged callback.
@@ -68,8 +69,10 @@ def recallback(regex, **kwargs):
 	... 	def dosilly(self, text):
 	... 		self.send(Commands.say("What?"))
 	"""
-	def _(func):
-		return func
+	flags = kwargs.get('flags', None)
+	stripcolors = kwargs.get('stripcolors', False)
+	pattern = re.compile(regex, flags)
+	func = yield
 	#TODO: Implement
-	return _
+	yield func
 

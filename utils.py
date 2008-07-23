@@ -127,6 +127,36 @@ def execute(line):
 	Checks if qc handled it
 """
 
+def complexdecorator(dec):
+	"""
+	Simplifies writting a decorator with arguments.
+	
+	def mydec(...):
+		process1
+		def _(func):
+			process2
+			return func
+		return _
+	
+	Becomes
+	
+	@complexdecorator
+	def mydec(...):
+		process1
+		func = yield
+		process2
+		yield func
+	"""
+	@wraps(dec)
+	def wrapper(*pargs, **kwargs):
+		gen = dec(*pargs, **kwargs)
+		gen.next() # Move to the first yield
+		def realdec(func):
+			rv = gen.send(func) # return from first yield and move to second
+			gen.close() #clean-up properly and immediately
+			return rv
+		return realdec
+	return wrapper
 
 def callbyline(meth):
 	"""callbyline(callable) -> callable
@@ -153,5 +183,4 @@ def callbyline(meth):
 				rv = meth(self, line)
 		meth.text_tail = lines[-1]
 		return rv
-	
 	return wrapper
