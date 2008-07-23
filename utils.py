@@ -6,6 +6,7 @@ Utilities, dealing mostly with strings.
 """
 from __future__ import division, absolute_import, with_statement
 import re
+from functools import wraps
 #__all__ = 'colors', 'BLACK', RED, GREEN, YELLOW, BLUE, CYAN, MAGENTA, WHITE, GREY_TRANS, GREY_SOLID
 
 BLACK, RED, GREEN, YELLOW, BLUE, CYAN, MAGENTA, WHITE, GREY_TRANS, GREY_SOLID =\
@@ -124,5 +125,33 @@ def execute(line):
 		does quoted text as described above 
 		Otherwise, tokens are split by whitespace
 	Checks if qc handled it
-	
 """
+
+
+def callbyline(meth):
+	"""callbyline(callable) -> callable
+	
+	Wraps up a single-argument function so that it is called on each line 
+	(saving the tail for the next call). Use as decorator.
+	"""
+	meth.text_tail = ""
+	@wraps(meth)
+	def wrapper(text, *pargs):
+		self = None
+		# Auto-detect method
+		if len(pargs) > 1:
+			raise TypeError, "One argument at most for methods."
+		elif len(pargs) == 1:
+			self, text = text, pargs[0]
+		
+		text = meth.text_tail + text
+		lines = text.split('\n')
+		for line in lines[:-1]:
+			if self is None:
+				rv = meth(line)
+			else:
+				rv = meth(self, line)
+		meth.text_tail = lines[-1]
+		return rv
+	
+	return wrapper

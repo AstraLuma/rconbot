@@ -8,11 +8,13 @@ Allows you to easily write bots that react to events.
 """
 from __future__ import division, absolute_import, with_statement
 from .nexuiz import NexRcon, Commands
+from .utils import callbyline
 __all__ = 'Bot', 'command', 'recallback'
 
 class Bot(NexRcon):
 	#TODO: Implement
 	
+	@callbyline
 	def textReceived(self, data):
 		"""b.textReceived(string) -> None
 		Takes data received and parses out commands and callbacks.
@@ -50,8 +52,8 @@ def command(func):
 	#TODO: Implement
 	return func
 
-def recallback(regex):
-	"""recallback(string) -> (callable) -> callable
+def recallback(regex, **kwargs):
+	"""recallback(string, [**flags]) -> (callable) -> callable
 	Registers a method as a regular expression-trigged callback.
 	
 	The method is called whenever the regex is found (via search) inside the 

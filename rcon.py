@@ -49,7 +49,6 @@ class Rcon(DatagramProtocol):
 	_streaming = False
 	def __init__(self, host, port, password):
 		"""Rcon(string, int, string)
-		
 		Init's Rcon with the host, port, and rcon password needed.
 		"""
 		self._host = host
