@@ -11,13 +11,14 @@ issues.
 from __future__ import division, absolute_import, with_statement
 from twisted.internet.protocol import DatagramProtocol
 from twisted.internet.defer import Deferred, inlineCallbacks, returnValue
+from twisted.internet import reactor
 from Queue import Queue, Empty
 import sys, re
 from rconbot.utils import quote
 __all__ = 'Rcon', 'CommandRefused', 'VariableException', 'NoValue', 'WrongVariable'
 
 SEND_FORMAT = '\xFF\xFF\xFF\xFF%s\0'
-RECV_PREFIX = '\xFF\xFF\xFF\xFFn'
+RECV_PREFIX = '\xFF\xFF\xFF\xFF'
 
 class CommandRefused(Exception):
 	"""
@@ -39,7 +40,7 @@ class WrongVariable(Exception):
 	The server returned a value, but it was for the wrong variable.
 	"""
 
-class Rcon(DatagramProtocol):
+class Rcon(DatagramProtocol, object): # Why doesn't twisted use new-style classes?
 	"""
 	Communicates with a DarkPlaces server using rcon.
 	"""
@@ -55,13 +56,21 @@ class Rcon(DatagramProtocol):
 		self._port = port or 26000
 		self.__password = password
 		self._deferreds = Queue(-1)
+		# Make sure we remove ourselves before our transport gets wiped
+		reactor.addSystemEventTrigger('before', 'shutdown', self.stop_streaming)
 	
-	def __del__(self):
-		"""
-		Cleans up streaming when the object is garbage collected, so the server 
-		isn't sending needless packets.
-		"""
-		self.stop_streaming()
+#	def doStop(self):
+#		"""
+#		Cleans up streaming when the object is garbage collected, so the server 
+#		isn't sending needless packets.
+#		"""
+#		d = self.stop_streaming()
+#		waiting = True
+#		def clear(*p): waiting = False
+#		d.addBoth(clear)
+#		while waiting:
+#			reactor.iterate()
+#		super(Rcon, self).doStop()
 	
 	def startProtocol(self):
 		"""
@@ -91,25 +100,30 @@ class Rcon(DatagramProtocol):
 		"""
 		Parses data from the server and dispatches it to the right place.
 		"""
-		#print 'recv: %r' % data
+#		print 'recv: %r' % data
 		if data.startswith(RECV_PREFIX):
 			data = data[len(RECV_PREFIX):]
 		else:
 			return
-		if len(data) and data[-1] == '\0':
-			data = data[:-1]
-		print >> sys.stderr, "received %r... from %s:%d" % (data[:64], host, port)
-		if len(data) and data[0] == '\x01':
-			self.chatReceived(data[1:])
-		else:
-			if self.RCON_IGNORABLE.search(data) is not None:
-				return # Ignore it
-			try:
-				d = self._deferreds.get_nowait() # If there isn't an item, skip it
-			except Empty:
-				self.textReceived(data)
+		if data[0] == 'n':
+			# Console data
+			data = data[1:] # Remove the prefixing 'n'
+			if len(data) and data[-1] == '\0':
+				data = data[:-1]
+			print >> sys.stderr, "received %r... from %s:%d" % (data[:64], host, port)
+			if len(data) and data[0] == '\x01':
+				self.chatReceived(data[1:])
 			else:
-				d.callback(data)
+				if self.RCON_IGNORABLE.search(data) is not None:
+					return # Ignore it
+				try:
+					d = self._deferreds.get_nowait() # If there isn't an item, skip it
+				except Empty:
+					self.textReceived(data)
+				else:
+					d.callback(data)
+		else:
+			self.packetReceived(data)
 	
 	def send_raw(self, text):
 		"""r.send_raw(string) -> int
@@ -234,6 +248,14 @@ class Rcon(DatagramProtocol):
 		Meant to be overridden.
 		"""
 		sys.stdout.write("Chat: "+data)
+	
+	def packetReceived(self, data):
+		"""r.packetReceived(string) -> None
+		Any other packets the server receives go here.
+		
+		Meant to be overridden.
+		"""
+		print "Packet: %r" % data
 
 
 if __name__ == '__main__':

@@ -9,10 +9,23 @@ Allows you to easily write bots that react to events.
 from __future__ import division, absolute_import, with_statement
 from .nexuiz import NexRcon, Commands
 from .utils import callbyline, complexdecorator
+import uuid, re
 __all__ = 'Bot', 'command', 'recallback'
 
+
+COMMAND_CALL = re.compile(r'^\{(?P<uuid>[-0-9A-Fa-f]{36})\}:(?P<arguments>.*)$')
 class Bot(NexRcon):
-	#TODO: Implement
+	def __init__(self, *pargs, **kwargs):
+		super(Bot, self).__init__(*pargs, **kwargs)
+		
+	
+	def _make_alias(self, name, uuid, numargs=10):
+		rv = "alias %s " % name
+		host = self.transport.getHost()
+		hoststring = "%s:%i" % (host.host, host.port)
+		for i in xrange(numargs):
+			rv += 'packet "%s" "{%s}-%n:$%n";' % (hoststring, str(uuid), i, i)
+		rv += 'packet "%s" "{%s}-exec";'
 	
 	@callbyline
 	def textReceived(self, data):
@@ -38,10 +51,12 @@ def command(func):
 	Registers a method as a new command.
 	
 	Sends the server an alias for this command which prints a unique string 
-	(eg, a GUID) to the console, which is then picked-up.
+	(eg, a UUID) to the console, which is then picked-up.
 	
 	The method is called whenever the command is executed server-side. The 
 	arguments are positional arguments which match what it was called with.
+	
+	Due to technical reasons, only 9 arguments are allowed.
 	
 	Example:
 	>>> class MyBot(Bot):
@@ -49,7 +64,8 @@ def command(func):
 	... 	def dosilly(self):
 	... 		self.send(Commands.say(":p"))
 	"""
-	#TODO: Implement
+	func.mkcommand = True
+	func.command_uuid = uuid.uuid1()
 	return func
 
 @complexdecorator
@@ -73,6 +89,6 @@ def recallback(regex, **kwargs):
 	stripcolors = kwargs.get('stripcolors', False)
 	pattern = re.compile(regex, flags)
 	func = yield
-	#TODO: Implement
+	func.recallback_info = {'pattern': pattern, 'stripcolors': stripcolors}
 	yield func
 
