@@ -10,7 +10,7 @@ issues.
 """
 from __future__ import division, absolute_import, with_statement
 from twisted.internet.protocol import DatagramProtocol
-from twisted.internet import defer, inlineCallbacks, returnValue
+from twisted.internet.defer import Deferred, inlineCallbacks, returnValue
 from Queue import Queue, Empty
 import sys, re
 from rconbot.utils import quote
@@ -131,7 +131,7 @@ class Rcon(DatagramProtocol):
 		Wraps a command in rcon and sends it, creating and handling the 
 		Deferred.
 		"""
-		d = defer.Deferred()
+		d = Deferred()
 		self._deferreds.put(d)
 		self.send_raw(self.format_rcon(cmd))
 		return d
@@ -143,7 +143,7 @@ class Rcon(DatagramProtocol):
 		handling the Deferred.
 		"""
 		# Used by NexRcon
-		d = defer.Deferred()
+		d = Deferred()
 		self._deferreds.put(d)
 		self.send_raw(self.format_rcon('\0'.join(cmds)))
 		return d

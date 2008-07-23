@@ -15,6 +15,9 @@ from .rcon import Rcon
 from . import utils
 __all__ = 'Commands', 'NexRcon'
 
+# TODO: Restructure so that Commands uses cmdlist's search capabilities so that 
+# when the user queries an unknown method, it immediately returns a stub but 
+# also sends a request to the server to get the full method info.
 class _Commands(object):
 	"""
 	Does all the handling of command aliases, so that one can chain together 
@@ -23,8 +26,7 @@ class _Commands(object):
 	Each method represents an actual command.
 	"""
 	# Because it would be rediculous to implement every command, we do some hackery
-	# When a NexRcon is init'd, it requests the current list of commands before 
-	# start_stream() is called. This allows it to fully parse the long list.
+	# Eventually, I'll figure out a way to get it to request method details as needed
 	__commands = None
 	__cont = ''
 	def __init__(self):
@@ -57,12 +59,11 @@ class _Commands(object):
 			return (name,)+pargs
 		generic_command.__name__ = name
 		if name in self.__commands:
-			generic_command.__doc__ = self.__commands[doc]
+			generic_command.__doc__ = self.__commands[name]
 		return generic_command
 	
 	def __getattr__(self, name): 
 		"""Commands.__getattr__(n) <==> getattr(Commands, n)
-		
 		Returns methods for commands which haven't been created yet.
 		"""
 		# We depend on the behavior that if the method already exists, this isn't called
@@ -97,42 +98,6 @@ class NexRcon(Rcon):
 	Like Rcon, with the addition of handling Commands.
 	"""
 	# Uses some internal methods of Rcon
-	_init = True
-	def __init__(self, *pargs):
-		"""
-		See Rcon.__init__()
-		"""
-		Rcon.__init__(self, *pargs)
-		self._init = True
-		# Catches multiple packets because of the command list's size
-		# Does some magical method swapping
-		self._backup_textReceived = self.textReceived
-		self.textReceived = self._textReceived
-		# Grab the list of commands
-		d = self.cmd('cmdlist')
-		d.addCallback(Commands._init_commands)
-		d.addCallback(self._finished_huh)
-		# TODO: Do we wait for _init to be cleared?
-	
-	def _finished_huh(self, text):
-		"""
-		Internal.
-		Does work dealing with wrapping up initialization.
-		"""
-		if text is None:
-			self._init = False
-			self._textReceived(None) # To clean up
-		return text
-	
-	def _textReceived(self, text):
-		"""
-		Internal.
-		Catches loose packets and wraps up init.
-		"""
-		if self._init:
-			self._finished_huh(Commands._init_commands(text))
-		if not self._init: # Make sure we swap methods back
-			self.textReceived = self._backup_textReceived
 	
 	def send(self, *cmds):
 		"""nr.send(cmd, ...) -> Deferred
