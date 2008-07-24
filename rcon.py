@@ -183,6 +183,15 @@ class Rcon(DatagramProtocol, object): # Why doesn't twisted use new-style classe
 		"""
 		return self._sends((self.format_cmd(*cmd) for cmd in cmds))
 	
+	def getHostString(self):
+		"""r.getHostString() -> str|None
+		Gets a host string suitable for packet or log_dest_udp. Returns None if 
+		we aren't connected.
+		"""
+		if self.transport is None: return None
+		host = self.transport.getHost()
+		return "%s:%i" % (host.host, host.port)
+	
 	CVARVAL = re.compile(r'^"(?P<name>.*)" is "(?P<value>.*)" \["(?P<default>.*)"\]\n?$')
 	@inlineCallbacks
 	def getcvar(self, var):
@@ -217,7 +226,7 @@ class Rcon(DatagramProtocol, object): # Why doesn't twisted use new-style classe
 		"""
 		host = self.transport.getHost()
 		cur, _ = yield self.getcvar('log_dest_udp')
-		cur += " %s:%i" % (host.host, host.port)
+		cur += " "+self.getHostString()
 		self.setcvars(log_dest_udp=cur.strip())
 		self._streaming = True
 	
@@ -227,8 +236,7 @@ class Rcon(DatagramProtocol, object): # Why doesn't twisted use new-style classe
 		Tears down streaming console.
 		"""
 		if self._streaming:
-			host = self.transport.getHost()
-			hoststring = "%s:%i" % (host.host, host.port)
+			hoststring = self.getHostString()
 			cur, _ = yield self.getcvar('log_dest_udp')
 			cur = cur.replace(hoststring, '')
 			self.setcvars(log_dest_udp=cur)

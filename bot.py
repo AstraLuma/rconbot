@@ -24,16 +24,13 @@ def match2pkw(match):
 	return p, kw
 
 def func_numargs(func):
-	"""func_numargs(function) -> int|None
-	Figures out the number of positional arguments the function can take, or 
-	None if it can take any number.
+	"""func_numargs(function) -> int,bool
+	Figures out the number of positional arguments the function can take, and 
+	if it has a *pargs.
 	"""
 	code = func.func_code
 	rv = code.co_argcount
-	if code.co_flags & 0x04:
-		return None
-	else:
-		return rv
+	return rv, code.co_flags & 0x04
 
 COMMAND_CALL = re.compile(r'^\{(?P<uuid>[-0-9A-Fa-f]{36})\}-(?P<what>[^:]*)(?::(?P<value>.*))?$')
 class Bot(NexRcon):
@@ -77,15 +74,42 @@ class Bot(NexRcon):
 		Internal.
 		Registers a @commmand.
 		"""
-		numargs = func_numargs(meth) # Introspectively finds the number of arguments
+		numargs, var = func_numargs(meth) # Introspectively finds the number of arguments
 		
-		if numargs is None:
-			numargs = 9 # Technical reasons dealing with aliases
-		elif getattr(self, name) is not meth:
+		if getattr(self, name) is not meth:
 			# A method, remove one argument
 			numargs -= 1
 		self._commands[meth.command_uuid] = getattr(self, name) # Call the method, not the function
 		self._command_args[meth.command_uuid] = [None]*numargs
+		if var:
+			self._command_args[meth.command_uuid].append(None)
+	
+	def _add_recallback(self, name, meth):
+		"""
+		Internal.
+		Registers a @recallback.
+		"""
+		pattern = meth.recallback_info['pattern']
+		stripcolors = meth.recallback_info['stripcolors']
+		self._re_callbacks[pattern] = stripcolors, getattr(self, name) # Call the method, not the function
+	
+	def _make_alias(self, name, uuid, numargs=9, rest=False):
+		"""
+		Internal.
+		Generates the alias command to register a command on the server.
+		"""
+		print "_make_alias: %r %r %r %r" % (name, uuid, numargs, rest)
+		hoststring = self.getHostString()
+		rv = ""
+		print "_make_alias: %r" % rv
+		for i in xrange(numargs+1):
+			rv += 'packet "%s" "{%s}-%i:$%i";' % (hoststring, str(uuid), i, i)
+#		if rest:
+#			rv += 'packet "%s" "{%s}-rest:$%i-";' % (hoststring, str(uuid), numargs+1) # Specifying q for a multiple-argument func isn't supported.
+		# Also, packet still doesn't support it.
+		rv += 'packet "%s" "{%s}-exec";' % (hoststring, str(uuid))
+		rv = 'alias %s "%s"' % (name, rv.replace('"', r'\"'))
+		return rv
 	
 	def startProtocol(self):
 		"""
@@ -98,40 +122,13 @@ class Bot(NexRcon):
 			assert hasattr(meth, 'command_uuid')
 			assert uuid == meth.command_uuid
 			name = meth.__name__
-			numargs = func_numargs(meth) # Introspectively finds the number of arguments
+			numargs, var = func_numargs(meth) # Introspectively finds the number of arguments
 		
-			if numargs is None:
-				numargs = 9 # Technical reasons dealing with aliases
-			elif getattr(self, name) is not meth:
+			if getattr(self, name) is not meth:
 				# A method, remove one argument
 				numargs -= 1
-			alias = self._make_alias(name, uuid, numargs)
+			alias = self._make_alias(name, uuid, numargs, var)
 			self.send(alias)
-	
-	def _add_recallback(self, name, meth):
-		"""
-		Internal.
-		Registers a @recallback.
-		"""
-		pattern = meth.recallback_info['pattern']
-		stripcolors = meth.recallback_info['stripcolors']
-		self._re_callbacks[pattern] = stripcolors, getattr(self, name) # Call the method, not the function
-	
-	def _make_alias(self, name, uuid, numargs=9):
-		"""
-		Internal.
-		Generates the alias command to register a command on the server.
-		"""
-		print "_make_alias: %r %r %r" % (name, uuid, numargs)  
-		host = self.transport.getHost()
-		hoststring = "%s:%i" % (host.host, host.port)
-		rv = ""
-		print "_make_alias: %r" % rv
-		for i in xrange(numargs+1):
-			rv += 'packet "%s" "{%s}-%i:$%i";' % (hoststring, str(uuid), i, i)
-		rv += 'packet "%s" "{%s}-exec";' % (hoststring, str(uuid))
-		rv = 'alias %s "%s"' % (name, rv.replace('"', r'\"'))
-		return rv
 	
 	@callbyline
 	def textReceived(self, data):
@@ -172,7 +169,10 @@ class Bot(NexRcon):
 			if what >= 0:
 				if value == ('$%i'%(what+1)): return # Wasn't actually given
 				print "Set: %r %r" % (what, value)
-				args[what] = value #TODO: Parse value so it's a plain string
+				args[what] = value # No parsing required
+		elif what == 'rest': # The *pargs part
+			if value[0] == '$' and value[1:-1].isdigit() and value[-1] == '-': return # Wasn't actually given
+			args[-1] = value #TODO: Figure out how to parse out individual args
 		elif what == 'exec': # Execute method with stored arguments
 			print "Exec: %r %r" % (cmd, args)
 			try:
@@ -211,7 +211,8 @@ def command(func):
 	The method is called whenever the command is executed server-side. The 
 	arguments are positional arguments which match what it was called with.
 	
-	Due to technical reasons, only 9 arguments are allowed.
+	If the command has a *pargs, it will at most have one value: a single 
+	string for all the other arguments.
 	
 	Example:
 	>>> class MyBot(Bot):
