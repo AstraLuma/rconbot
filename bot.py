@@ -98,15 +98,19 @@ class Bot(NexRcon):
 		Internal.
 		Generates the alias command to register a command on the server.
 		"""
+		# When the DP fix that allows ${* q} to work, this will become much easier.
 		print "_make_alias: %r %r %r %r" % (name, uuid, numargs, rest)
 		hoststring = self.getHostString()
 		rv = ""
 		print "_make_alias: %r" % rv
+		if rest: # Fake it
+			numargs = max(numargs, 9)
 		for i in xrange(numargs+1):
 			rv += 'packet "%s" "{%s}-%i:$%i";' % (hoststring, str(uuid), i, i)
 #		if rest:
-#			rv += 'packet "%s" "{%s}-rest:$%i-";' % (hoststring, str(uuid), numargs+1) # Specifying q for a multiple-argument func isn't supported.
-		# Also, packet still doesn't support it.
+#			rv += 'packet "%s" "{%s}-rest:$%i-";' % (hoststring, str(uuid), numargs+1) 
+			# Specifying q for a multiple-argument func isn't supported (yet, it's in DP's HEAd).
+			# Also, packet still doesn't support it.
 		rv += 'packet "%s" "{%s}-exec";' % (hoststring, str(uuid))
 		rv = 'alias %s "%s"' % (name, rv.replace('"', r'\"'))
 		return rv
@@ -170,9 +174,9 @@ class Bot(NexRcon):
 				if value == ('$%i'%(what+1)): return # Wasn't actually given
 				print "Set: %r %r" % (what, value)
 				args[what] = value # No parsing required
-		elif what == 'rest': # The *pargs part
-			if value[0] == '$' and value[1:-1].isdigit() and value[-1] == '-': return # Wasn't actually given
-			args[-1] = value #TODO: Figure out how to parse out individual args
+#		elif what == 'rest': # The *pargs part
+#			if value[0] == '$' and value[1:-1].isdigit() and value[-1] == '-': return # Wasn't actually given
+#			args[-1] = value # When the ${* q} fix gets through, we duplicate the DP argument parsing here
 		elif what == 'exec': # Execute method with stored arguments
 			print "Exec: %r %r" % (cmd, args)
 			try:
@@ -211,8 +215,8 @@ def command(func):
 	The method is called whenever the command is executed server-side. The 
 	arguments are positional arguments which match what it was called with.
 	
-	If the command has a *pargs, it will at most have one value: a single 
-	string for all the other arguments.
+	NOTE: If *pargs is given, up to 9 arguments altogether will be handled. If 
+	the command defines more than that, *pargs is ignored.
 	
 	Example:
 	>>> class MyBot(Bot):
