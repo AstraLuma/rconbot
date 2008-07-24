@@ -112,7 +112,7 @@ class Rcon(DatagramProtocol, object): # Why doesn't twisted use new-style classe
 			data = data[1:] # Remove the prefixing 'n'
 			if len(data) and data[-1] == '\0':
 				data = data[:-1]
-			print >> sys.stderr, "received %r... from %s:%d" % (data[:64], host, port)
+#			print >> sys.stderr, "received %r... from %s:%d" % (data[:64], host, port)
 			if len(data) and data[0] == '\x01':
 				self.chatReceived(data[1:])
 			else:

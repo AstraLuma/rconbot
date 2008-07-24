@@ -125,11 +125,12 @@ class Bot(NexRcon):
 		print "_make_alias: %r %r %r" % (name, uuid, numargs)  
 		host = self.transport.getHost()
 		hoststring = "%s:%i" % (host.host, host.port)
-		rv = "alias %s " % name
+		rv = ""
 		print "_make_alias: %r" % rv
 		for i in xrange(numargs+1):
 			rv += 'packet "%s" "{%s}-%i:$%i";' % (hoststring, str(uuid), i, i)
 		rv += 'packet "%s" "{%s}-exec";' % (hoststring, str(uuid))
+		rv = 'alias %s "%s"' % (name, rv.replace('"', r'\"'))
 		return rv
 	
 	@callbyline
@@ -219,8 +220,7 @@ def command(func):
 	... 		self.send(Commands.say(":p"))
 	
 	Bugs:
-	* quoted strings (spam "\"foo bar\") don't work
-	* can't detect when arguments are given or not.
+	* Detection of omitted arguments not perfect (arguments can't be "$0" or similar)
 	"""
 	func.command_uuid = uuid.uuid1()
 	return func
