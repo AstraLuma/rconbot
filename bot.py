@@ -18,7 +18,8 @@ def match2pkw(match):
 	keyword arguments.
 	"""
 	pattern = match.re
-	p = tuple(t for i,t in enumerate(match.groups()) if i not in pattern.groupindex.values())
+	print "match2pkw: %r %r %r" % (match.groups(), pattern.groupindex, match.groupdict())
+	p = tuple(t for i,t in enumerate(match.groups()) if i+1 not in pattern.groupindex.values())
 	kw = match.groupdict()
 	return p, kw
 
@@ -39,7 +40,7 @@ class Bot(NexRcon):
 	"""
 	A framework to implement a simple bot.
 	"""
-	#TODO: Remove command aliases.
+	#TODO: Remove command aliases when we're done.
 	_commands = {}
 	_command_args = {}
 	_re_callbacks = {}
@@ -142,6 +143,7 @@ class Bot(NexRcon):
 			m = pattern.search(text)
 			if m:
 				p, kw = match2pkw(m)
+				print "textReceived:exec: %r %r %r %r" % (call, text, p, kw)
 				call(text, *p, **kw)
 	
 	def packetReceived(self, data):
@@ -190,6 +192,13 @@ class Bot(NexRcon):
 		reactor.listenUDP(0, proto)
 		proto.start_streaming()
 		reactor.run()
+	
+	# Some convenience functions
+	def say(self, text):
+		"""b.say(t) <==> b.send(Commands.say(t))
+		Convenience function for saying things in chat.
+		"""
+		return self.send(Commands.say(text))
 
 def command(func):
 	r"""command(callable) -> callable
