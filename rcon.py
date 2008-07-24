@@ -58,6 +58,8 @@ class Rcon(DatagramProtocol, object): # Why doesn't twisted use new-style classe
 		self._deferreds = Queue(-1)
 		# Make sure we remove ourselves before our transport gets wiped
 		reactor.addSystemEventTrigger('before', 'shutdown', self.stop_streaming)
+		# For whatever reason, the above line causes errors in 
+		# t.i.udp.Port.doRead() and t.i.protocol.AbstractDatagramProtocol.doStop()
 	
 #	def doStop(self):
 #		"""
@@ -216,7 +218,7 @@ class Rcon(DatagramProtocol, object): # Why doesn't twisted use new-style classe
 		host = self.transport.getHost()
 		cur, _ = yield self.getcvar('log_dest_udp')
 		cur += " %s:%i" % (host.host, host.port)
-		self.setcvars(log_dest_udp=cur)
+		self.setcvars(log_dest_udp=cur.strip())
 		self._streaming = True
 	
 	@inlineCallbacks

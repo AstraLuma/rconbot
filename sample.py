@@ -7,7 +7,7 @@ An example bot.
 Currently won't load due to the lack of implementation
 """
 from __future__ import division, absolute_import, with_statement
-from .bot import Bot, recallback
+from .bot import Bot, recallback, command, loadpassfromconfig
 __all__ = 'SillyBot',
 
 class SillyBot(Bot):
@@ -19,8 +19,18 @@ class SillyBot(Bot):
 	def slag(self, text, name):
 		# self.protocol is from Bot
 		self.protocol.say("%s will make good bullets. *pour*")
-		
+	
+	@command
+	def spam(self, *pargs):
+		print "Command test: %r" % (pargs,)
+
+def test():
+	"""
+	Totally non-reusable function for my own purposes.
+	"""
+	import os
+	SillyBot.run(loadpassfromconfig(os.path.expanduser('~/Nexuiz/data/rcon.cfg')))
 
 if __name__ == '__main__':
 	# Should figure out how this works exactly
-	pass
+	test()
