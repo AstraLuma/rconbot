@@ -7,7 +7,12 @@ Utilities, dealing mostly with strings.
 from __future__ import division, absolute_import, with_statement
 import re
 from functools import wraps
-#__all__ = 'colors', 'BLACK', RED, GREEN, YELLOW, BLUE, CYAN, MAGENTA, WHITE, GREY_TRANS, GREY_SOLID
+from .nexfs import NexFS
+__all__ = (
+	'BLACK', 'RED', 'GREEN', 'YELLOW', 'BLUE', 'CYAN', 'MAGENTA', 'WHITE', 
+	'GREY_TRANS', 'GREY_SOLID', 'DEFAULT_COLOR',
+	'colors', 'color_escape', 'stripcolors', 'Quoted', 'quote', 'parse', 
+	'nexdata', 'parseconfig', 'complexdecorator', 'callbyline')
 
 BLACK, RED, GREEN, YELLOW, BLUE, CYAN, MAGENTA, WHITE, GREY_TRANS, GREY_SOLID =\
 	range(10)
@@ -93,6 +98,50 @@ def quote(text, say=False):
 			# Don't quote unless we have to
 			text = '"'+text.replace('\\', '\\\\').replace('"', '\\"')+'"'
 	return text
+
+def parse(text):
+	"""parse(string) -> [string, ...]
+	Parses a string the same way that DarkPlaces does, except for variables.
+	"""
+	#FIXME: Handling escaping
+	text = text.strip()
+	bits = text.split('"') # A trick I learned to parse quotes
+	parts = []
+	for i, bit in enumerate(bits):
+		if i % 2 == 0:
+			# No quotes
+			if '//' in bit: # Comment found
+				# Do that here because it doesn't count inside quoted strings
+				bit = bit.split('//', 1)[0]
+				parts += bit.split()
+				break
+			parts += bit.split()
+		else:
+			# Quoted
+			parts.append(bit)
+	return parts
+
+filesystem = NexFS()
+def parseconfig(fn):
+	"""parseconfig(string) -> generator: [string, ...]
+	Yields each command of the given file, recursing as necessary.
+	"""
+	fs = filesystem
+	print 'parseconfig %r' % fn
+	with fs.open(fn, 'rU') as config:
+		for line in config:
+			parts = parse(line)
+			if len(parts) >= 2 and parts[0] == 'exec':
+				try:
+					pc = parseconfig(fs.join(fs.dirname(fn), parts[1]))
+				except IOError, OSError:
+					import traceback
+					traceback.print_exc()
+				else:
+					for c in pc:
+						yield c
+			else:
+				yield parts
 
 """
 Parsing commands (from darkplaces/cmd.c:302)

@@ -8,7 +8,7 @@ Allows you to easily write bots that react to events.
 """
 from __future__ import division, absolute_import, with_statement
 from .nexuiz import NexRcon, Commands
-from .utils import callbyline, complexdecorator, stripcolors
+from .utils import callbyline, complexdecorator, stripcolors, parseconfig
 import uuid, re
 __all__ = 'Bot', 'command', 'recallback', 'loadpassfromconfig'
 
@@ -227,31 +227,19 @@ def command(func):
 	Bugs:
 	* Detection of omitted arguments not perfect (arguments can't be "$0" or similar)
 	"""
-	func.command_uuid = uuid.uuid1()
+	func.command_uuid = uuid.uuid1() # We make use of UUIDs to minimize the chance of something accidentally being parsed.
 	return func
 
 def loadpassfromconfig(configfile):
-	"""loadpassfromconfig(string) -> string
-	Scans the file for the rcon password.
+	"""loadpassfromconfig(string) -> string|None
+	Scans the file for the rcon password, or None if it isn't found
 	"""
-	with open(configfile, 'rU') as config:
-		for line in config:
-			if 'rcon_password' in line:
-				# Possible. Do further parsing
-				line = line.strip()
-				line = line.split('//', 1)[0] # Remove comments
-				bits = line.split('"') # A trick I learned to parse quotes
-				parts = []
-				for i, bit in enumerate(bits):
-					if i % 2 == 0:
-						parts += bit.split()
-					else:
-						parts.append(bit)
-				if len(parts) >= 2 and parts[0] == 'rcon_password':
-					# Yes, the actual password
-					return parts[1]
-		else:
-			return None # No password found
+	rv = None
+	for parts in parseconfig(configfile):
+		if len(parts) >= 2 and parts[0] == 'rcon_password':
+			# Yes, the actual password
+			rv = parts[1]
+	return rv
 
 @complexdecorator
 def recallback(regex, **kwargs):
