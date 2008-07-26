@@ -71,7 +71,7 @@ class NexFS(object):
 	_nex_paths = []
 	
 	def __init__(self, *pargs):
-		self._nex_paths = [os.path.abspath(p) for p in pargs]
+		self._nex_paths = [os.path.expanduser('~/.nexuiz/data/data')]+[os.path.abspath(p) for p in pargs]
 		self._root = None
 	
 	def has_loaded(self):
@@ -172,6 +172,7 @@ class NexFS(object):
 		if fn.endswith('.pk3'):
 			# NOTE: .pk3's aren't allowed except in the root, but it's easier to implement this recursively.
 			try:
+				print "Adding packfile %r" % fn
 				zf = ZipFile(fullname, 'r')
 			except (zipfile.BadZipfile, IOError):
 				warnings.warn("Not a package: %r" % fullname)
@@ -190,7 +191,7 @@ class NexFS(object):
 		else:
 			if os.path.isdir(fullname):
 				self._adddir(fn, src)
-				for f in os.listdir(fullname):
+				for f in sorted(os.listdir(fullname)):
 					self._procfile(os.path.join(fn,f), src)
 			else:
 				if os.path.exists(fullname): # Needed for broken symlinks
@@ -203,10 +204,10 @@ class NexFS(object):
 		"""
 		if not self.has_loaded(): 
 			self._root = {}
-			dirs = list(dirs)+self._nex_paths+[os.path.expanduser('~/.nexuiz/data/data')] # Only do this the first time
+			dirs = list(dirs)+self._nex_paths # Only do this the first time
 		print '_loaddirs: %r' % dirs
 		for d in dirs:
-			for fn in os.listdir(d):
+			for fn in sorted(os.listdir(d)):
 				self._procfile(fn, d)
 	
 	def reload(self):
@@ -215,6 +216,12 @@ class NexFS(object):
 		"""
 		self._root = None # Unload all our data
 		self._loaddirs()
+	
+	def getsource(self, file):
+		n = self._getnode(file)
+		if isinstance(n[1], dict):
+			raise IOError(21, 'Is a directory')
+		return n[1]
 	
 	# Actual functions
 	# From __builtin__

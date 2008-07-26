@@ -3,12 +3,11 @@
 # vim:tabstop=4:noexpandtab:
 """
 An example bot.
-
-Currently won't load due to the lack of implementation
 """
 from __future__ import division, absolute_import, with_statement
-from .bot import Bot, recallback, command, loadpassfromconfig
-from .nexuiz import Commands
+from rconbot.utils import nfs
+from rconbot.bot import Bot, recallback, command, loadpassfromconfig
+from rconbot.nexuiz import Commands
 __all__ = 'SillyBot',
 
 class SillyBot(Bot):
@@ -29,13 +28,6 @@ class SillyBot(Bot):
 	def spam(self, *pargs):
 		print "Command test: %r" % (pargs,)
 
-def test():
-	"""
-	Totally non-reusable function for my own purposes.
-	"""
-	import os
-	SillyBot.run(loadpassfromconfig(os.path.expanduser('~/Nexuiz/data/rcon.cfg')))
-
 if __name__ == '__main__':
-	# Should figure out how this works exactly
-	test()
+	nfs.addpath('.') # Change this to your nexuiz directory
+	SillyBot.run(loadpassfromconfig('data/server.cfg'))
