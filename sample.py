@@ -30,4 +30,4 @@ class SillyBot(Bot):
 
 if __name__ == '__main__':
 	nfs.addpath('.') # Change this to your nexuiz directory
-	SillyBot.run(loadpassfromconfig('data/server.cfg'))
+	SillyBot.run(loadpassfromconfig('server.cfg'))
