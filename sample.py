@@ -6,7 +6,7 @@
 An example bot.
 """
 from __future__ import division, absolute_import, with_statement
-from rconbot.utils import nfs
+from rconbot.utils import filesystem
 from rconbot.bot import Bot, recallback, command, loadpassfromconfig
 from rconbot.nexuiz import Commands
 __all__ = 'SillyBot',
@@ -30,5 +30,5 @@ class SillyBot(Bot):
 		print "Command test: %r" % (pargs,)
 
 if __name__ == '__main__':
-	nfs.addpath('.') # Change this to your nexuiz directory
+	filesystem.addpath('.') # Change this to your nexuiz directory
 	SillyBot.run(loadpassfromconfig('server.cfg'))
