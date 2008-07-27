@@ -1,3 +1,4 @@
+#!/usr/bin/python
 # -*- coding: utf-8 -*-
 # -*- tab-width: 4; use-tabs: 1 -*-
 # vim:tabstop=4:noexpandtab:
